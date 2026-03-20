@@ -29,6 +29,11 @@ export default function Dashboard() {
   const fetchTickets = async () => {
     try {
       const res = await fetch("/api/tickets")
+
+      if (!res.ok) {
+        throw new Error("No se pudieron obtener los tickets")
+      }
+
       const data = await res.json()
       setTickets(data)
     } catch (error) {
@@ -40,8 +45,9 @@ export default function Dashboard() {
 
   const handleResolve = async (ticket: Ticket) => {
     if (ticket.status === "Resuelto") return
-    
+
     setResolvingId(ticket.id)
+
     try {
       const res = await fetch(`/api/tickets/${ticket.id}`, {
         method: "PATCH",
@@ -49,18 +55,27 @@ export default function Dashboard() {
         body: JSON.stringify({ status: "Resuelto" }),
       })
 
-      if (res.ok) {
-        const updatedTicket = await res.json()
-        
-        // BUG 2 INTENCIONAL: Mutación de estado de React
-        // Se altera el arreglo original en lugar de crear uno nuevo.
-        // Esto causa que React no detecte el cambio y no vuelva a renderizar la UI inmediatamente.
-        const ticketIndex = tickets.findIndex((t) => t.id === updatedTicket.id)
-        if (ticketIndex !== -1) {
-          tickets[ticketIndex] = updatedTicket
-          setTickets(tickets) // React no verá esto como un cambio de estado válido
-        }
+      if (!res.ok) {
+        throw new Error("No se pudo resolver el ticket")
       }
+
+      const updatedTicket = await res.json()
+
+      /**
+       * FIX: Evitar mutación directa del estado de React.
+       *
+       * Antes se modificaba el arreglo original y luego se reutilizaba
+       * la misma referencia en setTickets(tickets), lo que impedía que
+       * React detectara correctamente el cambio y actualizara la UI.
+       *
+       * Ahora se crea un nuevo arreglo con map para forzar un re-render
+       * correcto cuando cambia el estado del ticket.
+       */
+      setTickets((prevTickets) =>
+        prevTickets.map((currentTicket) =>
+          currentTicket.id === updatedTicket.id ? updatedTicket : currentTicket
+        )
+      )
     } catch (error) {
       console.error("Error resolving ticket:", error)
     } finally {
@@ -77,16 +92,22 @@ export default function Dashboard() {
   }
 
   return (
-    // BUG 1 INTENCIONAL: El Navbar inferior bloquea el contenido
-    // En móviles, falta un padding inferior (ej. pb-20) en este contenedor para que el 
-    // último ticket no quede escondido detrás del fixed footer y su botón sea in-clickeable.
-    <div className="min-h-screen bg-gray-50 relative">
-      
+    /**
+     * FIX: Agregar espacio inferior en móviles para evitar que
+     * el footer fijo tape el último ticket y deje el botón
+     * "Resolver Ticket" sin posibilidad de interacción.
+     *
+     * pb-24 se aplica en móvil.
+     * md:pb-0 elimina ese espacio extra en pantallas medianas o mayores.
+     */
+    <div className="min-h-screen bg-gray-50 relative pb-24 md:pb-0">
       {/* Header Fijo */}
       <header className="bg-blue-600 text-white shadow-md sticky top-0 z-10">
         <div className="max-w-3xl mx-auto px-4 py-4 flex justify-between items-center">
           <h1 className="text-xl font-bold">TechCorp Soporte</h1>
-          <span className="text-sm bg-blue-700 px-3 py-1 rounded-full">Usuario Actual: Admin</span>
+          <span className="text-sm bg-blue-700 px-3 py-1 rounded-full">
+            Usuario Actual: Admin
+          </span>
         </div>
       </header>
 
@@ -106,10 +127,12 @@ export default function Dashboard() {
             </div>
           ) : (
             tickets.map((ticket) => (
-              <div 
-                key={ticket.id} 
+              <div
+                key={ticket.id}
                 className={`bg-white rounded-lg shadow-sm border p-5 transition-colors ${
-                  ticket.status === "Resuelto" ? "border-green-200 bg-green-50/30" : "border-gray-200"
+                  ticket.status === "Resuelto"
+                    ? "border-green-200 bg-green-50/30"
+                    : "border-gray-200"
                 }`}
               >
                 <div className="flex justify-between items-start mb-3">
@@ -128,7 +151,7 @@ export default function Dashboard() {
                       {ticket.companyId}
                     </span>
                   </div>
-                  
+
                   {ticket.status === "Resuelto" ? (
                     <span className="flex items-center text-green-600 text-sm font-medium gap-1">
                       <CheckCircle className="w-4 h-4" />
@@ -142,14 +165,19 @@ export default function Dashboard() {
                   )}
                 </div>
 
-                <h3 className="text-lg font-semibold text-gray-900 mb-1">{ticket.title}</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                  {ticket.title}
+                </h3>
                 <p className="text-gray-600 text-sm mb-4">{ticket.description}</p>
 
                 <div className="flex justify-between items-center mt-4 pt-4 border-t border-gray-100">
                   <span className="text-xs text-gray-400">
-                    Creado hace {formatDistanceToNow(new Date(ticket.createdAt), { locale: es })}
+                    Creado hace{" "}
+                    {formatDistanceToNow(new Date(ticket.createdAt), {
+                      locale: es,
+                    })}
                   </span>
-                  
+
                   {ticket.status !== "Resuelto" && (
                     <button
                       onClick={() => handleResolve(ticket)}
@@ -173,7 +201,7 @@ export default function Dashboard() {
         </div>
       </main>
 
-      {/* Mobile Sticky Footer - Causa el Bug 1 en móviles */}
+      {/* Footer fijo en móvil */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] p-4 flex justify-around items-center z-50">
         <div className="flex flex-col items-center text-blue-600">
           <Clock className="w-6 h-6 mb-1" />
@@ -184,7 +212,6 @@ export default function Dashboard() {
           <span className="text-xs font-medium">Resueltos</span>
         </div>
       </div>
-
     </div>
   )
 }
